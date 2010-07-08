@@ -16,7 +16,7 @@ class Tweetback extends Blox {
 	
 	var $apiurl	= "";
 	var $devid	= "";
-	var $query	= "artfolio.co.jp";
+	var $query	= "";
 	
 	function crawl($param = array()) {
 		$CI =& get_instance();
@@ -38,22 +38,26 @@ class Tweetback extends Blox {
 			$CI->load->library(array('post', 'user'));
 			$CI->load->helper('date');
 			$now = now();
-			print_r($tweet);exit;
+			
 			foreach ($tweet->tweets as $t) {
 				$CI->db->where('post_app_id', $t->tweet_id);
 				if ($CI->db->count_all_results(DB_TBL_POST) == 0) {//過去にポストされたかの確認
 					$arr = array(
 						'post_app'			=> 'twitter',
 						'post_app_id'		=> $t->tweet_id,
-						'post_text'			=> $t->tweet_text,
+						'post_text'			=> strip_tags($t->tweet_text),
 						'post_type'			=> 1,
 						'post_createdate'	=> $t->tweet_created_at,
 						'post_modifydate'	=> $t->tweet_created_at
 					);
-					print_r($arr);
+					
+					if (preg_match('('.$url.'/'.$CI->setting->get('url_alias_post').'/(.+?)/)', $t->tweet_text, $mt)) {
+						$arr['post_parent'] = $mt[1];
+					}
+					
 					$post_id = $CI->post->_set_post($arr);
 					
-					$user_id = $this->set_user($t->tweet_from_user_id);//ユーザーの確認
+					$user_id = $this->set_user($t->tweet_from_user_id, $t->tweet_from_user, $t->tweet_profile_image_url);//ユーザーの確認
 					if (!empty($user_id)) {
 						//著者登録
 						if (isset($user_id) && $user_id > 0) {
@@ -69,10 +73,11 @@ class Tweetback extends Blox {
 		}
 	}
 	
-	function set_user($user_id) {
+	function set_user($user_id, $user_account = "", $profile_img = "") {
 		$CI =& get_instance();
 		$CI->load->library('ext/twitter');
-		
+		$CI->load->helper('date');
+		$now = now();
 		#if (!$CI->setting->get('twitter_access_token') || !$CI->setting->get('twitter_access_token_secret')) return false;
 		#if (!$CI->auth->oauth($CI->setting->get('twitter_access_token'), $CI->setting->get('twitter_access_token_secret'), base_url())) return false;
 		
@@ -84,36 +89,43 @@ class Tweetback extends Blox {
 			$result = $CI->twitter->call('statuses/show', array(
 				'id'		=> $user_id
 			));
-			#$result = $CI->twitter->call('statuses/friends_timeline', array('count' => 2));
-			#exit;
 			
-			if (!isset($result->result)) return false;//ユーザーデータ取得出来なかった場合、falseを返す
-			print_r($result);
-			//-------------リファクタリング！！！！twitterよりユーザデータを取得したい
-			/*$anonymous = $CI->user->get_anonymous();
-			$arr = array(
-				'user_name'		=> $t->tweet_from_user,
-				'user_account'	=> $t->tweet_from_user,
-				'user_type'		=> $anonymous[0]['id'],
-				'user_createdate'	=> $now,
-				'user_modifydate'	=> $now,
-				'user_actiondate'	=> $now
-			);
-			//-------------リファクタリング！！！！
-			
+			if (!isset($result->result)) {//ユーザーデータ取得出来なかった場合
+				$anonymous = $CI->user->get_anonymous();
+				$arr = array(
+					'user_name'		=> $user_account,
+					'user_account'	=> $user_account,
+					'user_type'		=> $anonymous[0]['id'],
+					'user_createdate'	=> $now,
+					'user_modifydate'	=> $now,
+					'user_actiondate'	=> $now
+				);
+			} else {//ユーザーデータ取得した場合
+				//-------------リファクタリング！！！！twitterよりユーザデータを取得したい
+				$anonymous = $CI->user->get_anonymous();
+				$arr = array(
+					'user_name'		=> $user_account,
+					'user_account'	=> $user_account,
+					'user_type'		=> $anonymous[0]['id'],
+					'user_createdate'	=> $now,
+					'user_modifydate'	=> $now,
+					'user_actiondate'	=> $now
+				);
+				//-------------リファクタリング！！！！
+			}
 			$CI->db->insert(DB_TBL_USER, $arr);
-			$user_id = $CI->db->insert_id();
+			$user_db_id = $CI->db->insert_id();
 			
 			$CI->linx->set('user2twitter', array(
-				'a'			=> $user_id,
-				'b'			=> $t->tweet_from_user_id,
-				'status'	=> $t->tweet_profile_image_url
-			));*/
+				'a'			=> $user_db_id,
+				'b'			=> $user_id,
+				'status'	=> $profile_img
+			));
 		} else {//ユーザー登録済
 			$user = $CI->user->get(array('id' => $u[0]['a'], 'stack' => false));
-			$user_id = $user[0]['id'];
+			$user_db_id = $user[0]['id'];
 		}
-		return $user_id;
+		return $user_db_id;
 	}
 	
 	function Tweetback() {
