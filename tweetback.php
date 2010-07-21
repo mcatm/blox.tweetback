@@ -27,6 +27,9 @@ class Tweetback extends Blox {
 		if (empty($this->devid)) return false;
 		$api_url = sprintf($this->apiurl, urlencode($url), $this->devid);
 		
+		$ng_list = explode(',', $CI->setting->get('tweetback_ng_list'));
+		#print_r($ng_list);exit;
+		
 		$json = $CI->output->get_cache($api_url);
 		if (!$json) {
 			$json = @file_get_contents($api_url);
@@ -41,7 +44,7 @@ class Tweetback extends Blox {
 			
 			foreach ($tweet->tweets as $t) {
 				$CI->db->where('post_app_id', $t->tweet_id);
-				if ($CI->db->count_all_results(DB_TBL_POST) == 0) {//過去にポストされたかの確認
+				if ($CI->db->count_all_results(DB_TBL_POST) == 0 && !in_array($t->tweet_from_user, $ng_list)) {//過去にポストされたかの確認
 					$arr = array(
 						'post_app'			=> 'twitter',
 						'post_app_id'		=> $t->tweet_id,
@@ -71,56 +74,70 @@ class Tweetback extends Blox {
 				}
 			}
 		}
+		#exit();
 	}
 	
 	function set_user($user_id, $user_account = "", $profile_img = "") {
 		$CI =& get_instance();
-		$CI->load->library('ext/twitter');
+		$CI->load->library(array('file', 'ext/twitter'));
 		$CI->load->helper('date');
 		$now = now();
-		#if (!$CI->setting->get('twitter_access_token') || !$CI->setting->get('twitter_access_token_secret')) return false;
-		#if (!$CI->auth->oauth($CI->setting->get('twitter_access_token'), $CI->setting->get('twitter_access_token_secret'), base_url())) return false;
+		
+		if (!$CI->auth->oauth($CI->setting->get('twitter_access_token'), $CI->setting->get('twitter_access_token_secret'), base_url())) return false;
 		
 		$u = $CI->linx->get('user2twitter', array(
 			'b'		=> $user_id
 		));
 		
 		if (empty($u)) {//ユーザー未登録
-			$result = $CI->twitter->call('statuses/show', array(
+			$result = $CI->twitter->call('users/show', array(
 				'id'		=> $user_id
 			));
+			#print_r($result);exit;
 			
 			if (!isset($result->result)) {//ユーザーデータ取得出来なかった場合
 				$anonymous = $CI->user->get_anonymous();
 				$arr = array(
 					'user_name'		=> $user_account,
-					'user_account'	=> $user_account,
+					'user_account'	=> 'twitter:'.$user_account,
 					'user_type'		=> $anonymous[0]['id'],
 					'user_createdate'	=> $now,
 					'user_modifydate'	=> $now,
 					'user_actiondate'	=> $now
 				);
+				
+				$img_url = str_replace('_normal.', '.', $profile_img);
 			} else {//ユーザーデータ取得した場合
-				//-------------リファクタリング！！！！twitterよりユーザデータを取得したい
 				$anonymous = $CI->user->get_anonymous();
 				$arr = array(
 					'user_name'		=> $user_account,
-					'user_account'	=> $user_account,
+					'user_account'	=> 'twitter:'.$user_account,
 					'user_type'		=> $anonymous[0]['id'],
+					'user_description'	=> $result->description,
 					'user_createdate'	=> $now,
 					'user_modifydate'	=> $now,
 					'user_actiondate'	=> $now
 				);
-				//-------------リファクタリング！！！！
+				
+				$img_url = str_replace('_normal.', '.', $result->profile_image_url);
 			}
+			$file_id = $CI->file->set_extfile($img_url);//画像を登録
+			
 			$CI->db->insert(DB_TBL_USER, $arr);
 			$user_db_id = $CI->db->insert_id();
 			
 			$CI->linx->set('user2twitter', array(
 				'a'			=> $user_db_id,
-				'b'			=> $user_id,
-				'status'	=> $profile_img
+				'b'			=> $user_id
 			));
+			
+			if ($file_id) {//画像を紐付け
+				$CI->linx->set('user2file', array(
+					'a'			=> $user_db_id,
+					'b'			=> $file_id,
+					'status'	=> 'main'
+				));
+			}
 		} else {//ユーザー登録済
 			$user = $CI->user->get(array('id' => $u[0]['a'], 'stack' => false));
 			$user_db_id = $user[0]['id'];
