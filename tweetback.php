@@ -19,6 +19,7 @@ class Tweetback extends Blox {
 	var $query	= "";
 	
 	function crawl($param = array()) {
+		
 		$CI =& get_instance();
 		$CI->load->library('ext/twitter');
 		
@@ -49,6 +50,7 @@ class Tweetback extends Blox {
 						'post_app'			=> 'twitter',
 						'post_app_id'		=> $t->tweet_id,
 						'post_text'			=> strip_tags($t->tweet_text),
+						'post_meta'			=> $CI->post->_get_meta(strip_tags($t->tweet_text)),
 						'post_type'			=> 1,
 						'post_createdate'	=> $t->tweet_created_at,
 						'post_modifydate'	=> $t->tweet_created_at
@@ -93,7 +95,6 @@ class Tweetback extends Blox {
 			$result = $CI->twitter->call('users/show', array(
 				'id'		=> $user_id
 			));
-			#print_r($result);exit;
 			
 			if (!isset($result->result)) {//ユーザーデータ取得出来なかった場合
 				$anonymous = $CI->user->get_anonymous();
@@ -110,9 +111,9 @@ class Tweetback extends Blox {
 			} else {//ユーザーデータ取得した場合
 				$anonymous = $CI->user->get_anonymous();
 				$arr = array(
-					'user_name'		=> $user_account,
-					'user_account'	=> 'twitter:'.$user_account,
-					'user_type'		=> $anonymous[0]['id'],
+					'user_name'			=> $user_account,
+					'user_account'		=> 'twitter:'.$user_account,
+					'user_type'			=> $anonymous[0]['id'],
 					'user_description'	=> $result->description,
 					'user_createdate'	=> $now,
 					'user_modifydate'	=> $now,
